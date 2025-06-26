@@ -15,9 +15,19 @@ ALERT_EXPIRATION_MINUTES = int(os.environ.get("ALERT_EXPIRATION_MINUTES", 360))
 
 def get_recent_alerts(coreid: str, blob_client: BlobServiceClient) -> Dict[str, str]:
     """
-    Retrieve recent alerts sent for a given coreid from Blob Storage.
-    Returns a dict {reason: timestamp} filtered to only include alerts
-    within the last ALERT_EXPIRATION_MINUTES.
+    Retrieves recent alert logs for a given sensor core ID from Blob Storage.
+
+    This function loads the alert history file stored at 'alerts/{coreid}.json',
+    which contains a dictionary mapping alert reasons to their latest timestamps.
+    It filters out entries that are older than the expiration threshold defined by
+    the ALERT_EXPIRATION_MINUTES environment variable.
+
+    Args:
+        coreid (str): The sensor device core ID used to locate the alert log file.
+        blob_client (BlobServiceClient): Azure BlobServiceClient used to access blob storage.
+
+    Returns:
+        Dict[str, str]: Filtered alert dictionary with recent (non-expired) alerts.
     """
     blob_path = f"alerts/{coreid}.json"
     result = {}
@@ -48,14 +58,18 @@ def get_recent_alerts(coreid: str, blob_client: BlobServiceClient) -> Dict[str, 
     return result
 
 
-def upload_alert_log(alert_log: Dict[str, str], coreid: str, blob_client: BlobServiceClient):
+def upload_alert_log(alert_log: Dict[str, str], coreid: str, blob_client: BlobServiceClient) -> None:
     """
-    Uploads the updated alert log for a given device to Blob Storage.
+    Uploads the updated alert log for a given sensor core ID to Blob Storage.
+
+    This function stores the alert history as a JSON file at 'alerts/{coreid}.json',
+    containing a dictionary that maps alert reasons to their most recent timestamps.
+    If a log already exists, it is overwritten with the new contents.
 
     Args:
-        coreid: Device ID used as the filename.
-        alert_log: Dictionary with alert reasons and their timestamps.
-        blob_client: An instance of BlobServiceClient.
+        alert_log (Dict[str, str]): Dictionary of alert reasons and their timestamps.
+        coreid (str): The sensor device core ID used as the log file name.
+        blob_client (BlobServiceClient): Azure BlobServiceClient used to upload the log.
     """
     blob_name = f"alerts/{coreid}.json"
     json_data = json.dumps(alert_log, indent=2)

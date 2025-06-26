@@ -3,7 +3,7 @@ import os
 import smtplib
 from datetime import datetime
 from email.message import EmailMessage
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List, Optional, Union
 
 import pytz
 from azure.storage.blob import BlobServiceClient
@@ -23,13 +23,27 @@ MAX_LATENCY_MINUTES = 30
 SUBJECT_PREFFIX = "[SENSOR DATA ALERT TRIGGERED] "
 
 
-def check_and_alert(parsed: Dict[str, Any], blob_client: BlobServiceClient):
+def check_and_alert(parsed: Dict[str, Any], blob_client: BlobServiceClient) -> Optional[Dict[str, str]]:
     """
-    Checks the parsed dictionary and triggers alerts based on its content.
-    Extend this logic to add new alert conditions.
+    Evaluates parsed sensor data and triggers alert emails based on predefined conditions.
+
+    The function performs multiple checks on the parsed message to detect issues such as:
+    - Invalid input
+    - Known error codes
+    - High transmission latency
+    - Malformed or unrecognized formats
+
+    It avoids sending duplicate alerts by checking recent alert logs in Blob Storage
+    (one per core ID). If no recent alert exists for the same reason, an email is sent
+    and the alert is recorded with a UTC timestamp.
+
+    Args:
+        parsed (Dict[str, Any]): Parsed sensor payload containing metadata and raw content.
+        blob_client (BlobServiceClient): Authenticated client used to read alert history.
 
     Returns:
-    dict[str, str] if any alerts were triggered (reason → timestamp), else None.
+        Optional[Dict[str, str]]: Dictionary mapping triggered alert reasons to timestamps
+        (ISO 8601), or None if no alerts were triggered.
     """
     alerts_triggered = False
 
@@ -100,7 +114,11 @@ def check_and_alert(parsed: Dict[str, Any], blob_client: BlobServiceClient):
     return recent_alerts if alerts_triggered else None
 
 
-def _check_invalid(parsed):
+def _check_invalid(parsed: Dict[str, Any]) -> Optional[Dict[str, str]]:
+    """
+    Checks for invalid input data where 'data' is empty or missing.
+    Returns an alert dictionary if triggered, else None.
+    """
     datatype = parsed.get("datatype")
     if datatype == "invalid":
         alert_subject = "Invalid data received"
@@ -117,7 +135,11 @@ def _check_invalid(parsed):
     return None
 
 
-def _check_unknown(parsed):
+def _check_unknown(parsed: Dict[str, Any]) -> Optional[Dict[str, str]]:
+    """
+    Checks if the data type is unrecognized ('unknown').
+    Returns an alert dictionary if triggered, else None.
+    """
     datatype = parsed.get("datatype")
     if datatype == "unknown":
         alert_subject = "Unrecognized data format received"
@@ -132,7 +154,11 @@ def _check_unknown(parsed):
     return None
 
 
-def _check_error(parsed):
+def _check_error(parsed: Dict[str, Any]) -> Optional[Dict[str, str]]:
+    """
+    Checks for reported sensor error messages (datatype = 'error').
+    Returns an alert dictionary if triggered, else None.
+    """
     datatype = parsed.get("datatype")
     if datatype == "error":
         box_id = parsed.get("box_id", "unknown")
@@ -148,7 +174,11 @@ def _check_error(parsed):
     return None
 
 
-def _check_malformed(parsed):
+def _check_malformed(parsed: Dict[str, Any]) -> Optional[Dict[str, str]]:
+    """
+    Checks if the payload was marked as malformed during parsing.
+    Returns an alert dictionary if triggered, else None.
+    """
     if parsed.get("malformed") is True:
         datatype = parsed.get("datatype")
         parsing_error = parsed.get(
@@ -167,7 +197,11 @@ def _check_malformed(parsed):
     return None
 
 
-def _check_latency(parsed):
+def _check_latency(parsed: Dict[str, Any]) -> Optional[Dict[str, str]]:
+    """
+    Checks if the transmission latency exceeds the configured threshold.
+    Returns an alert dictionary if triggered, else None.
+    """
     if parsed.get("timestamp") and parsed.get("published_at"):
         try:
             published_at = parse_iso_datetime(parsed["published_at"])
@@ -191,7 +225,11 @@ def _check_latency(parsed):
 
 
 def _send_alert_email(subject: str, body: str, recipients: Union[str, List[str]]):
-    """Internal helper to send email via SMTP."""
+    """
+    Sends an alert email via SMTP to one or multiple recipients.
+    
+    Normalizes recipient(s) and handles secure transmission using STARTTLS.
+    """
     try:
         if isinstance(recipients, str):
             recipients = [recipients]  # normalize recipients to a list
@@ -214,7 +252,11 @@ def _send_alert_email(subject: str, body: str, recipients: Union[str, List[str]]
 
 
 def _compose_body(parsed: Dict[str, Any], alert: Dict[str, str]) -> str:
-    """Create an informative body for the alert message."""
+    """
+    Composes the email body from parsed payload and alert context.
+
+    Includes metadata like Box ID, Core ID, timestamps, and raw data.
+    """
     summary = alert.get("summary", "")
     latency = "\n" + alert.get("latency") if alert.get("latency") else ""
 

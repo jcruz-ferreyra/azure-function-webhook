@@ -6,6 +6,20 @@ import pytz
 
 
 def parse_payload_data(raw: str) -> Dict:
+    """
+    Parses the raw payload string into a structured dictionary based on message type.
+
+    Recognizes three message formats:
+    - Startup messages (ending in 'LTE Setup Done')
+    - Error messages (ending in 'E#')
+    - Sensor data (comma-separated values starting with a box ID)
+
+    Args:
+        raw (str): Raw payload string received from the sensor.
+
+    Returns:
+        A dictionary containing the parsed data, or a minimal dict with type 'invalid' or 'unknown' if parsing fails.
+    """
     if not raw or not isinstance(raw, str):
         return _get_base_dict("invalid", raw)
 
@@ -32,6 +46,21 @@ def parse_payload_data(raw: str) -> Dict:
 
 
 def _parse_environment_data(raw: str, parts: list) -> Dict:
+    """
+    Parses structured sensor data (T, RH, Noise) from a comma-separated string.
+
+    Expects a leading comma, 5 metadata fields (box ID, month, day, hour, minute),
+    and a multiple-of-3 list of readings.
+    Also infers the year from the current date for timestamp generation.
+
+    Args:
+        raw (str): Original raw payload string.
+        parts (list): Tokenized string split by commas.    
+
+    Returns:
+        A dictionary with datatype 'environment', and parsed info, 
+        or a dictionary with parsing error info if parsing fails.
+    """
     base_dict = _get_base_dict("environment", raw)
     base_dict["box_id"] = parts[0]
 
@@ -79,6 +108,16 @@ def _parse_environment_data(raw: str, parts: list) -> Dict:
 
 
 def _parse_error_message(raw: str, match: re.Match) -> Dict:
+    """
+    Parses an error message containing a box ID, timestamp, and error code.
+
+    Args:
+        raw (str): Original raw payload string.
+        match (re.Match): Match object with extracted regex groups.
+
+    Returns:
+        A dictionary with datatype 'error', and parsed info or parsing error info if parsing fails.
+    """
     base_dict = _get_base_dict("error", raw)
     base_dict["box_id"] = match.group(1)
     base_dict["error_code"] = match.group(5)
@@ -97,6 +136,16 @@ def _parse_error_message(raw: str, match: re.Match) -> Dict:
 
 
 def _parse_startup_message(raw: str, match: re.Match) -> Dict:
+    """
+    Parses a startup message containing a box ID, timestamp, and 'LTE Setup Done'.
+
+    Args:
+        raw (str): Original raw payload string.
+        match (re.Match): Match object with extracted regex groups.
+
+    Returns:
+        A dictionary with datatype 'startup', and parsed info or parsing error info if parsing fails.
+    """
     base_dict = _get_base_dict("startup", raw)
     base_dict["box_id"] = match.group(1)
 
@@ -114,6 +163,9 @@ def _parse_startup_message(raw: str, match: re.Match) -> Dict:
 
 
 def _parse_datetime(box_date: str, hour: int, minute: int) -> str:
+    """
+    Parses a compact date string (YYMMDD) with hour and minute into an ISO UTC timestamp.
+    """
     year = 2000 + int(box_date[:2])
     month = int(box_date[2:4])
     day = int(box_date[4:6])
@@ -123,7 +175,17 @@ def _parse_datetime(box_date: str, hour: int, minute: int) -> str:
     return timestamp
 
 
+def _get_utc_timestamp(year, month, day, hour, minute):
+    """
+    Returns an ISO-formatted UTC timestamp from date and time components.
+    """
+    return datetime(year, month, day, hour, minute, tzinfo=timezone.utc).isoformat()
+
+
 def _get_base_dict(datatype, raw, parser_version=1.0):
+    """
+    Builds the base dictionary for parsed output, including type, raw input, timestamp, and version.
+    """
     return {
         "datatype": datatype,
         "raw": raw,
@@ -133,8 +195,7 @@ def _get_base_dict(datatype, raw, parser_version=1.0):
 
 
 def _get_error_dict(e):
+    """
+    Wraps an exception into a dictionary indicating a parsing error.
+    """
     return {"malformed": True, "parsing_error": str(e)}
-
-
-def _get_utc_timestamp(year, month, day, hour, minute):
-    return datetime(year, month, day, hour, minute, tzinfo=timezone.utc).isoformat()

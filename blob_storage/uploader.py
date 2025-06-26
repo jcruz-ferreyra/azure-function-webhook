@@ -19,18 +19,21 @@ CONTAINER_NAME = os.environ.get("BLOB_CONTAINER_NAME", "sensor-data")
 
 def upload_to_blob(parsed: Dict[str, Any], blob_client: BlobServiceClient):
     """
-    Upload data to blob storage (local or Azure).
+    Uploads a parsed payload dictionary to Azure Blob Storage.
+
+    This function converts the dictionary to JSON, generates a blob name from metadata,
+    and stores it in the defined container, creating it if necessary.
 
     Args:
-        data: Dictionary to upload as JSON
+        parsed (Dict[str, Any]): Parsed payload containing sensor data and metadata.
+        blob_client (BlobServiceClient): Azure BlobServiceClient instance for accessing storage.
 
     Returns:
-        str: File path (local mode) or blob name (Azure mode)
+        str: Full blob name used for storing the uploaded JSON data.
 
     Raises:
-        ValueError: If data is not JSON serializable
-        OSError: If local file operations fail
-        Exception: If Azure upload fails
+        ValueError: If the input is not a dictionary or JSON serialization fails.
+        Exception: If any error occurs during upload to Azure Blob Storage.
     """
     # Validate input
     if not isinstance(parsed, dict):
@@ -72,16 +75,15 @@ def upload_to_blob(parsed: Dict[str, Any], blob_client: BlobServiceClient):
 
 def _get_blob_folder(parsed: Dict[str, Any]) -> str:
     """
-    Determines the appropriate blob folder for the parsed payload.
+    Generates the blob folder path based on the payload type and structure.
 
-    - Groups 'invalid' under 'unknown'
-    - Adds 'malformed/' subfolder if the 'malformed' flag is True
+    Groups 'invalid' under 'unknown', and appends 'malformed/' if applicable.
 
     Args:
-        parsed (Dict): Parsed payload dictionary
+        parsed (Dict): Parsed payload dictionary.
 
     Returns:
-        str: Blob folder path (e.g., 'sensor', 'sensor/malformed', 'unknown', etc.)
+        str: Folder path for blob storage (e.g., 'environment/malformed', 'unknown').
     """
     base_folder = parsed.get("datatype", "unknown")
     if base_folder == "invalid":
@@ -94,6 +96,9 @@ def _get_blob_folder(parsed: Dict[str, Any]) -> str:
 
 
 def _get_blob_name(parsed: Dict[str, Any], blob_folder: str):
+    """
+    Generates a unique blob name based on the box or core ID and the current UTC timestamp.
+    """
     # TODO
     # Map coreid to box_id using sensors_metadata table on the database
     # Maybe we can use the second function app to save that table into json on the blob
