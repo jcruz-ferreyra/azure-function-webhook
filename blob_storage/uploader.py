@@ -13,7 +13,6 @@ import pytz
 from azure.core.exceptions import ResourceExistsError
 from azure.storage.blob import BlobServiceClient
 
-from shared.utils import get_blob_folder
 
 CONTAINER_NAME = os.environ.get("BLOB_CONTAINER_NAME", "sensor-data")
 
@@ -39,10 +38,7 @@ def upload_to_blob(parsed: Dict[str, Any], blob_client: BlobServiceClient):
 
     # Generate filename
     blob_folder = _get_blob_folder(parsed)
-
-    upload_timestamp = datetime.now(pytz.utc).strftime("%Y%m%dT%H%M%SZ")
-    box_id = parsed.get("box_id", "unknown")
-    blob_name = f"{blob_folder}/{box_id}_{upload_timestamp}.json"
+    blob_name = _get_blob_name(parsed, blob_folder)
 
     # Convert to JSON
     try:
@@ -92,6 +88,18 @@ def _get_blob_folder(parsed: Dict[str, Any]) -> str:
         base_folder = "unknown"
 
     if parsed.get("malformed") is True:
-        return os.path.join(base_folder, "malformed")
+        return f"{base_folder}/malformed"
 
     return base_folder
+
+
+def _get_blob_name(parsed: Dict[str, Any], blob_folder: str):
+    # TODO
+    # Map coreid to box_id using sensors_metadata table on the database
+    # Maybe we can use the second function app to save that table into json on the blob
+    # Maybe we can hardcode it in this app (no updates)
+    # Maybe we can just leave the coreid for unparsed files (expect low number of them)
+    upload_timestamp = datetime.now(pytz.utc).strftime("%Y%m%dT%H%M%SZ")
+    box_id = parsed.get("box_id") or parsed.get("coreid", "unknown")
+
+    return f"{blob_folder}/{box_id}_{upload_timestamp}.json"

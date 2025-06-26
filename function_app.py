@@ -33,12 +33,12 @@ def webhook_handler(req: func.HttpRequest) -> func.HttpResponse:
         )
 
     raw_data = payload.get("data")
-    if not raw_data:
-        return func.HttpResponse(
-            json.dumps({"error": "Missing 'data' field in request body"}),
-            status_code=400,
-            mimetype="application/json",
-        )
+    # if not raw_data:
+    #     return func.HttpResponse(
+    #         json.dumps({"error": "Missing 'data' field in request body"}),
+    #         status_code=400,
+    #         mimetype="application/json",
+    #     )
 
     parsed = parse_payload_data(raw_data)
     parsed["event"] = payload.get("event", "")

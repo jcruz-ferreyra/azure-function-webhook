@@ -3,14 +3,13 @@ import os
 import smtplib
 from datetime import datetime
 from email.message import EmailMessage
-from typing import Any, Dict
+from typing import Any, Dict, List, Union
 
 import pytz
 from azure.storage.blob import BlobServiceClient
 
 from blob_storage.alert_log import get_recent_alerts
 from shared.utils import parse_iso_datetime
-
 
 EMAIL_HOST = os.getenv("EMAIL_HOST")
 EMAIL_PORT = int(os.getenv("EMAIL_PORT", "587"))
@@ -88,7 +87,7 @@ def check_and_alert(parsed: Dict[str, Any], blob_client: BlobServiceClient):
                 _send_alert_email(
                     subject=SUBJECT_PREFFIX + alert.get("subject", "No subject"),
                     body=_compose_body(parsed, alert=alert),
-                    recipient=recipient,
+                    recipients=recipient,
                 )
                 recent_alerts[reason] = datetime.now(pytz.utc).isoformat()
                 alerts_triggered = True
@@ -157,7 +156,7 @@ def _check_malformed(parsed):
             f"Data does not match the expected pattern for type: {datatype}.",
         )
         alert_subject = f"Malformed {datatype} data received"
-        alert_summary = f"Parsing error occurred. {parsing_error}"
+        alert_summary = f"Parsing error occurred. {parsing_error}."
 
         return {
             "reason": "malformed",
@@ -178,7 +177,7 @@ def _check_latency(parsed):
             if latency_minutes > MAX_LATENCY_MINUTES:
                 box_id = parsed.get("box_id", "unknown")
                 alert_subject = f"High latency in Box {box_id}"
-                alert_summary = f"High transmission latency: {latency_minutes:.1f} minutes (threshold: {MAX_LATENCY_MINUTES}m)"
+                alert_summary = f"High transmission latency: {latency_minutes:.1f} minutes (threshold: {MAX_LATENCY_MINUTES}m)."
 
                 return {
                     "reason": "latency",
@@ -191,12 +190,15 @@ def _check_latency(parsed):
     return None
 
 
-def _send_alert_email(subject: str, body: str, recipient: str):
+def _send_alert_email(subject: str, body: str, recipients: Union[str, List[str]]):
     """Internal helper to send email via SMTP."""
     try:
+        if isinstance(recipients, str):
+            recipients = [recipients]  # normalize recipients to a list
+
         msg = EmailMessage()
         msg["From"] = EMAIL_SENDER
-        msg["To"] = recipient
+        msg["To"] = ", ".join(recipients)
         msg["Subject"] = subject
         msg.set_content(body)
 
@@ -206,7 +208,7 @@ def _send_alert_email(subject: str, body: str, recipient: str):
             smtp.login(EMAIL_SENDER, EMAIL_PASSWORD)
             smtp.send_message(msg)
 
-        logging.info(f"Alert email sent: {subject}")
+        logging.info(f"Alert email sent to: {', '.join(recipients)} | Subject: {subject}")
     except Exception as e:
         logging.error(f"Failed to send alert email: {e}")
 
