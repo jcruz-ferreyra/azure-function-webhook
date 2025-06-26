@@ -1,12 +1,20 @@
 import json
 import logging
+import os
 
 import azure.functions as func
+from azure.storage.blob import BlobServiceClient
 
 from blob_storage.uploader import upload_to_blob
-from shared.parser import parse_payload_data
-from shared.utils import get_blob_folder
+from blob_storage.alert_log import upload_alert_log
 from shared.alerts import check_and_alert
+from shared.parser import parse_payload_data
+
+
+CONNECTION_STRING = os.environ.get("BLOB_CONNECTION_STRING")
+
+if not CONNECTION_STRING:
+    raise ValueError("BLOB_CONNECTION_STRING environment variable is required")
 
 app = func.FunctionApp(http_auth_level=func.AuthLevel.FUNCTION)
 
@@ -37,15 +45,23 @@ def webhook_handler(req: func.HttpRequest) -> func.HttpResponse:
     parsed["published_at"] = payload.get("published_at", "")
     parsed["coreid"] = payload.get("coreid", "")
 
+    blob_client = BlobServiceClient.from_connection_string(CONNECTION_STRING)
+
     try:
-        check_and_alert(parsed)
+        updated_alert_log = check_and_alert(parsed, blob_client)
     except Exception as e:
         logging.error(f"Failed to check and alert: {e}")
         pass
 
+    if updated_alert_log:
+        try:
+            coreid = parsed.get("coreid", "no_coreid")
+            upload_alert_log(updated_alert_log, coreid, blob_client)
+        except Exception as e:
+            logging.error(f"Failed to upload updated alert log: {e}")
+
     try:
-        blob_folder = get_blob_folder(parsed)
-        upload_to_blob(parsed, blob_folder)
+        upload_to_blob(parsed, blob_client)
     except Exception as e:
         logging.exception("Failed to upload to blob.")
         return func.HttpResponse(

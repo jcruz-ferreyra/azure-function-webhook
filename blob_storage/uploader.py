@@ -7,19 +7,18 @@ import json
 import logging
 import os
 from datetime import datetime
+from typing import Dict, Any
 
 import pytz
 from azure.core.exceptions import ResourceExistsError
 from azure.storage.blob import BlobServiceClient
 
-CONNECTION_STRING = os.environ.get("BLOB_CONNECTION_STRING")
+from shared.utils import get_blob_folder
+
 CONTAINER_NAME = os.environ.get("BLOB_CONTAINER_NAME", "sensor-data")
 
-if not CONNECTION_STRING:
-    raise ValueError("BLOB_CONNECTION_STRING environment variable is required")
 
-
-def upload_to_blob(data: dict, blob_folder: str):
+def upload_to_blob(parsed: Dict[str, Any], blob_client: BlobServiceClient):
     """
     Upload data to blob storage (local or Azure).
 
@@ -35,24 +34,25 @@ def upload_to_blob(data: dict, blob_folder: str):
         Exception: If Azure upload fails
     """
     # Validate input
-    if not isinstance(data, dict):
+    if not isinstance(parsed, dict):
         raise ValueError("Data must be a dictionary")
 
     # Generate filename
+    blob_folder = _get_blob_folder(parsed)
+
     upload_timestamp = datetime.now(pytz.utc).strftime("%Y%m%dT%H%M%SZ")
-    box_id = data.get("box_id", "unknown")
+    box_id = parsed.get("box_id", "unknown")
     blob_name = f"{blob_folder}/{box_id}_{upload_timestamp}.json"
 
     # Convert to JSON
     try:
-        json_data = json.dumps(data, indent=2)
+        json_data = json.dumps(parsed, indent=2)
     except (TypeError, ValueError) as e:
         raise ValueError(f"Data is not JSON serializable: {e}")
 
     # Upload to azure
     try:
-        blob_service_client = BlobServiceClient.from_connection_string(CONNECTION_STRING)
-        container_client = blob_service_client.get_container_client(CONTAINER_NAME)
+        container_client = blob_client.get_container_client(CONTAINER_NAME)
 
         # Ensure container exists (create if needed)
         try:
@@ -72,3 +72,26 @@ def upload_to_blob(data: dict, blob_folder: str):
     except Exception as e:
         logging.error(f"Error uploading to Azure Blob: {e}")
         raise
+
+
+def _get_blob_folder(parsed: Dict[str, Any]) -> str:
+    """
+    Determines the appropriate blob folder for the parsed payload.
+
+    - Groups 'invalid' under 'unknown'
+    - Adds 'malformed/' subfolder if the 'malformed' flag is True
+
+    Args:
+        parsed (Dict): Parsed payload dictionary
+
+    Returns:
+        str: Blob folder path (e.g., 'sensor', 'sensor/malformed', 'unknown', etc.)
+    """
+    base_folder = parsed.get("datatype", "unknown")
+    if base_folder == "invalid":
+        base_folder = "unknown"
+
+    if parsed.get("malformed") is True:
+        return os.path.join(base_folder, "malformed")
+
+    return base_folder
